@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # ---- doctor ----
     sub.add_parser("doctor", help="Run health checks")
+
+    # ---- chat ----
     chat = sub.add_parser("chat", help="Interactive console chat (persists to DB)")
     chat.add_argument("conversation_id", nargs="?", default=None)
 
@@ -67,28 +69,34 @@ def main(argv: list[str] | None = None) -> int:
     add.add_argument("role")
     add.add_argument("content")
 
-    show = mem_sub.add_parser("show", help="Show messages for a conversation")
-    show.add_argument("conversation_id")
+    show_mem = mem_sub.add_parser("show", help="Show messages for a conversation")
+    show_mem.add_argument("conversation_id")
 
+    # ---- prompt command group ----
+    prompt = sub.add_parser("prompt", help="System prompt commands")
+    prompt_sub = prompt.add_subparsers(dest="prompt_cmd", required=True)
+
+    prompt_show = prompt_sub.add_parser("show", help="Show conversation system prompt")
+    prompt_show.add_argument("conversation_id")
+
+    prompt_set = prompt_sub.add_parser("set", help="Set conversation system prompt")
+    prompt_set.add_argument("conversation_id")
+    prompt_set.add_argument("prompt")
+
+    # NOW parse args
     args = parser.parse_args(argv)
 
     # ---- doctor ----
     if args.cmd == "doctor":
         return run_doctor()
-    
+
+    # ---- chat ----
     if args.cmd == "chat":
         from molly.chat import run_chat
         return run_chat(args.conversation_id)
-    
-    # ---- db upgrade ----
-    if args.cmd == "db" and args.db_cmd == "upgrade":
-        from molly.migrate import upgrade_head
-        upgrade_head()
-        print("DB upgraded to head ✅")
-        return 0
 
-    # ---- db seed ----
-    if args.cmd == "db" and args.db_cmd == "seed":
+    # ---- prompt ----
+    if args.cmd == "prompt":
         settings = load_settings()
         setup_logging(settings.log_level)
 
@@ -99,20 +107,66 @@ def main(argv: list[str] | None = None) -> int:
             user=settings.db.user,
             password=settings.db.password,
         )
-
         engine = create_db_engine(cfg)
         sf = make_session_factory(engine)
 
-        with session_scope(sf) as s:
-            repo = AppMetaRepo(s)
-            repo.upsert("schema", "v1")
-            repo.upsert("app", "molly")
+        if args.prompt_cmd == "show":
+            with session_scope(sf) as s:
+                convo = ConversationRepo(s).get(args.conversation_id)
+                if convo is None:
+                    print(f"Conversation not found ❌ ({args.conversation_id})")
+                    return 2
+                print(convo.system_prompt)
+            return 0
 
-        print("DB seeded ✅")
-        return 0
+        if args.prompt_cmd == "set":
+            with session_scope(sf) as s:
+                ok = ConversationRepo(s).set_prompt(args.conversation_id, args.prompt)
+                if not ok:
+                    print(f"Conversation not found ❌ ({args.conversation_id})")
+                    return 2
+            print("Prompt updated ✅")
+            return 0
 
-    # ---- db show ----
-    if args.cmd == "db" and args.db_cmd == "show":
+    # ---- db commands ----
+    if args.cmd == "db":
+        settings = load_settings()
+        setup_logging(settings.log_level)
+
+        if args.db_cmd == "upgrade":
+            from molly.migrate import upgrade_head
+            upgrade_head()
+            print("DB upgraded to head ✅")
+            return 0
+
+        cfg = DbConnInfo(
+            host=settings.db.host,
+            port=settings.db.port,
+            name=settings.db.name,
+            user=settings.db.user,
+            password=settings.db.password,
+        )
+        engine = create_db_engine(cfg)
+        sf = make_session_factory(engine)
+
+        if args.db_cmd == "seed":
+            with session_scope(sf) as s:
+                repo = AppMetaRepo(s)
+                repo.upsert("schema", "v1")
+                repo.upsert("app", "molly")
+            print("DB seeded ✅")
+            return 0
+
+        if args.db_cmd == "show":
+            with session_scope(sf) as s:
+                repo = AppMetaRepo(s)
+                schema = repo.get("schema")
+                app = repo.get("app")
+            print(f"app={app!r} schema={schema!r}")
+            return 0
+
+    # ---- memory commands ----
+    if args.cmd == "memory":
         settings = load_settings()
         setup_logging(settings.log_level)
 
@@ -123,99 +177,42 @@ def main(argv: list[str] | None = None) -> int:
             user=settings.db.user,
             password=settings.db.password,
         )
-
         engine = create_db_engine(cfg)
         sf = make_session_factory(engine)
 
-        with session_scope(sf) as s:
-            repo = AppMetaRepo(s)
-            schema = repo.get("schema")
-            app = repo.get("app")
+        if args.mem_cmd == "new":
+            with session_scope(sf) as s:
+                convo = ConversationRepo(s).create(title=None)
+                convo_id = convo.id
+            print(convo_id)
+            return 0
 
-        print(f"app={app!r} schema={schema!r}")
-        return 0
+        if args.mem_cmd == "add":
+            with session_scope(sf) as s:
+                convo = ConversationRepo(s).get(args.conversation_id)
+                if convo is None:
+                    print(f"Conversation not found ❌ ({args.conversation_id})")
+                    return 2
 
-    # ---- memory new ----
-    if args.cmd == "memory" and args.mem_cmd == "new":
-        settings = load_settings()
-        setup_logging(settings.log_level)
+                MessageRepo(s).add(
+                    conversation_id=args.conversation_id,
+                    role=args.role,
+                    content=args.content,
+                )
+            print("Message added ✅")
+            return 0
 
-        cfg = DbConnInfo(
-            host=settings.db.host,
-            port=settings.db.port,
-            name=settings.db.name,
-            user=settings.db.user,
-            password=settings.db.password,
-        )
+        if args.mem_cmd == "show":
+            with session_scope(sf) as s:
+                convo = ConversationRepo(s).get(args.conversation_id)
+                if convo is None:
+                    print(f"Conversation not found ❌ ({args.conversation_id})")
+                    return 2
 
-        engine = create_db_engine(cfg)
-        sf = make_session_factory(engine)
+                msgs = MessageRepo(s).list_for_conversation(args.conversation_id)
 
-        with session_scope(sf) as s:
-            convo = ConversationRepo(s).create(title=None)
-            convo_id = convo.id  # capture while still attached to session
-
-        print(convo_id)
-        return 0
-
-    # ---- memory add ----
-    if args.cmd == "memory" and args.mem_cmd == "add":
-        settings = load_settings()
-        setup_logging(settings.log_level)
-
-        cfg = DbConnInfo(
-            host=settings.db.host,
-            port=settings.db.port,
-            name=settings.db.name,
-            user=settings.db.user,
-            password=settings.db.password,
-        )
-
-        engine = create_db_engine(cfg)
-        sf = make_session_factory(engine)
-
-        with session_scope(sf) as s:
-            convo = ConversationRepo(s).get(args.conversation_id)
-            if convo is None:
-                print(f"Conversation not found ❌ ({args.conversation_id})")
-                return 2
-
-            MessageRepo(s).add(
-                conversation_id=args.conversation_id,
-                role=args.role,
-                content=args.content,
-            )
-
-        print("Message added ✅")
-        return 0
-
-    # ---- memory show ----
-    if args.cmd == "memory" and args.mem_cmd == "show":
-        settings = load_settings()
-        setup_logging(settings.log_level)
-
-        cfg = DbConnInfo(
-            host=settings.db.host,
-            port=settings.db.port,
-            name=settings.db.name,
-            user=settings.db.user,
-            password=settings.db.password,
-        )
-
-        engine = create_db_engine(cfg)
-        sf = make_session_factory(engine)
-
-        with session_scope(sf) as s:
-            convo = ConversationRepo(s).get(args.conversation_id)
-            if convo is None:
-                print(f"Conversation not found ❌ ({args.conversation_id})")
-                return 2
-
-            msgs = MessageRepo(s).list_for_conversation(args.conversation_id)
-
-        for m in msgs:
-            print(f"[{m.created_at}] {m.role}: {m.content}")
-
-        return 0
+            for m in msgs:
+                print(f"[{m.created_at}] {m.role}: {m.content}")
+            return 0
 
     return 1

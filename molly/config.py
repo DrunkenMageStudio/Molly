@@ -15,12 +15,22 @@ class DbSettings:
 
 
 @dataclass(frozen=True)
+class LmStudioSettings:
+    base_url: str
+    model: str
+    api_key: str
+    temperature: float
+    max_tokens: int
+
+
+@dataclass(frozen=True)
 class Settings:
     env: str
     log_level: str
     db: DbSettings
-    model_adapter = os.getenv("MOLLY_MODEL_ADAPTER", "dummy").strip().lower()
-    model_context_messages = int(os.getenv("MOLLY_MODEL_CONTEXT_MESSAGES", "20").strip())
+    model_adapter: str
+    model_context_messages: int
+    lmstudio: LmStudioSettings
 
 
 def load_settings() -> Settings:
@@ -37,4 +47,22 @@ def load_settings() -> Settings:
         password=os.getenv("MOLLY_DB_PASSWORD", "").strip(),
     )
 
-    return Settings(env=env, log_level=log_level, db=db)
+    model_adapter = os.getenv("MOLLY_MODEL_ADAPTER", "dummy").strip().lower()
+    model_context_messages = int(os.getenv("MOLLY_MODEL_CONTEXT_MESSAGES", "20").strip())
+
+    lmstudio = LmStudioSettings(
+        base_url=os.getenv("MOLLY_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1").strip().rstrip("/"),
+        model=os.getenv("MOLLY_LMSTUDIO_MODEL", "local-model").strip(),
+        api_key=os.getenv("MOLLY_LMSTUDIO_API_KEY", "lm-studio").strip(),
+        temperature=float(os.getenv("MOLLY_LMSTUDIO_TEMPERATURE", "0.7").strip()),
+        max_tokens=int(os.getenv("MOLLY_LMSTUDIO_MAX_TOKENS", "350").strip()),
+    )
+
+    return Settings(
+        env=env,
+        log_level=log_level,
+        db=db,
+        model_adapter=model_adapter,
+        model_context_messages=model_context_messages,
+        lmstudio=lmstudio,
+    )

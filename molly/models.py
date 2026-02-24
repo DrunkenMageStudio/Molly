@@ -27,9 +27,19 @@ class AppMeta(Base):
 
 class Conversation(Base):
     __tablename__ = "conversation"
+    from sqlalchemy import Text, DateTime
+    from sqlalchemy.sql import func
+    from sqlalchemy.orm import Mapped, mapped_column
+
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_updated_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     messages: Mapped[list["Message"]] = relationship(
