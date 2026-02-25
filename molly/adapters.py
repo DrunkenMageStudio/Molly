@@ -47,6 +47,8 @@ class LMStudioAdapter:
             data = r.json()
 
         return data["choices"][0]["message"]["content"].strip()
+    
+    
 class DummyAdapter:
     name = "dummy"
 
