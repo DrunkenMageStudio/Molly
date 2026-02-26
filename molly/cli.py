@@ -6,11 +6,9 @@ import logging
 from molly.config import load_settings
 from molly.db import DbConnInfo, create_db_engine, ping_db
 from molly.log import setup_logging
-
 from molly.session import make_session_factory, session_scope
-from molly.repos import AppMetaRepo
+from molly.repos import AppMetaRepo, ConversationRepo, MessageRepo, MemoryRepo
 
-from molly.repos import ConversationRepo, MessageRepo
 
 def run_doctor() -> int:
     settings = load_settings()
@@ -72,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
     show_mem = mem_sub.add_parser("show", help="Show messages for a conversation")
     show_mem.add_argument("conversation_id")
 
+    remember = mem_sub.add_parser("remember", help="Add a long-term memory item")
+    remember.add_argument("kind")
+    remember.add_argument("text")
+    remember.add_argument("--salience", type=float, default=1.0)
+
+    msearch = mem_sub.add_parser("search", help="Search long-term memory")
+    msearch.add_argument("query")
+    msearch.add_argument("--k", type=int, default=5)
+
     # ---- prompt command group ----
     prompt = sub.add_parser("prompt", help="System prompt commands")
     prompt_sub = prompt.add_subparsers(dest="prompt_cmd", required=True)
@@ -93,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     # ---- chat ----
     if args.cmd == "chat":
         from molly.chat import run_chat
+
         return run_chat(args.conversation_id)
 
     # ---- prompt ----
@@ -135,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.db_cmd == "upgrade":
             from molly.migrate import upgrade_head
+
             upgrade_head()
             print("DB upgraded to head ✅")
             return 0
@@ -213,6 +222,25 @@ def main(argv: list[str] | None = None) -> int:
 
             for m in msgs:
                 print(f"[{m.created_at}] {m.role}: {m.content}")
+            return 0
+
+        if args.mem_cmd == "remember":
+            with session_scope(sf) as s:
+                item = MemoryRepo(s).add_memory(
+                    kind=args.kind,
+                    text=args.text,
+                    salience=args.salience,
+                )
+                item_id = item.id
+            print(f"Memory saved ✅ id={item_id}")
+            return 0
+
+        if args.mem_cmd == "search":
+            with session_scope(sf) as s:
+                hits = MemoryRepo(s).search(args.query, top_k=args.k)
+
+            for item, score in hits:
+                print(f"{score:0.3f}  id={item.id}  {item.kind}: {item.text}")
             return 0
 
     return 1

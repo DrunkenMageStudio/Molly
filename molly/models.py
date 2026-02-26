@@ -19,42 +19,54 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 class Base(DeclarativeBase):
     pass
 
+from __future__ import annotations
+
+from datetime import datetime
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+# ... keep your existing Base and other models above ...
+
 
 class MemoryItem(Base):
     __tablename__ = "memory_item"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kind: Mapped[str] = mapped_column(String(50), nullable=False)  # preference/project/fact/etc
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
-    salience: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    salience: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     embedding: Mapped["MemoryEmbedding | None"] = relationship(
+        "MemoryEmbedding",
         back_populates="memory_item",
-        cascade="all, delete-orphan",
         uselist=False,
+        cascade="all, delete-orphan",
     )
 
 
 class MemoryEmbedding(Base):
     __tablename__ = "memory_embedding"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     memory_item_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("memory_item.id", ondelete="CASCADE"),
+        Integer,
+        ForeignKey("memory_item.id"),
         nullable=False,
+        index=True,
         unique=True,
     )
 
-    # Store float32 bytes (e.g., numpy.ndarray.astype(np.float32).tobytes())
+    # store float32 bytes
     vector: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
-    memory_item: Mapped["MemoryItem"] = relationship(back_populates="embedding")
-
-
+    memory_item: Mapped["MemoryItem"] = relationship(
+        "MemoryItem",
+        back_populates="embedding",
+    )
 class AppMeta(Base):
     """
     Tiny table for bootstrapping: records schema/app facts.

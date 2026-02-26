@@ -9,7 +9,7 @@ from molly.log import setup_logging
 from molly.session import make_session_factory, session_scope
 from molly.repos import ConversationRepo, MessageRepo
 from molly.prompts import TITLE_SYSTEM, SUMMARY_SYSTEM, make_title_prompt, make_summary_prompt
-
+from molly.repos import ConversationRepo, MessageRepo, MemoryRepo
 
 def get_adapter(settings) -> ModelAdapter:
     if settings.model_adapter == "dummy":
